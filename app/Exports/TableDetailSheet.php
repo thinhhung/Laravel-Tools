@@ -5,64 +5,110 @@ namespace App\Exports;
 use Maatwebsite\Excel\Concerns\FromCollection;
 use Maatwebsite\Excel\Concerns\WithTitle;
 use Illuminate\Support\Collection;
-use Str;
+use Maatwebsite\Excel\Concerns\WithEvents;
+use Maatwebsite\Excel\Events\AfterSheet;
+use PhpOffice\PhpSpreadsheet\Style\Fill;
+use PhpOffice\PhpSpreadsheet\Style\Border;
+use PhpOffice\PhpSpreadsheet\Style\Alignment;
+use Maatwebsite\Excel\Concerns\ShouldAutoSize;
 
-class TableDetailSheet implements FromCollection, WithTitle
+class TableDetailSheet implements FromCollection, WithTitle, WithEvents, ShouldAutoSize
 {
     private $connection;
-
     private $table;
+    private $headingTitleCellRange;
+    private $titleCellRanges;
+    private $dataCellRanges;
+    private $alignCenterCellRanges;
 
     public function __construct($connection, $table)
     {
         $this->connection = $connection;
         $this->table = $table;
+        $this->headingTitleCellRange = 'A1';
+        $this->titleCellRanges = [];
+        $this->dataCellRanges = [];
+        $this->alignCenterCellRanges = [];
     }
 
     public function collection()
     {
         $table = $this->connection->getDoctrineSchemaManager()->listTableDetails($this->table);
         $data = [
-            ['テーブル定義書'],
-            ['名称', str_beautifier($table->getName())],
+            [''],
             ['テーブル名', $table->getName()],
-            ['No', '論理テーブルの列名', '物理テーブルの列名', 'データ型', '桁', 'PRIMARY KEY', 'NOT NULL', 'UNIQUE', 'UNSIGNED', 'AUTO INCREMENT', 'INDEX', '初期値', '備考'],
+            ['スキーマ', 'public'],
+            ['備考', str_beautifier($table->getName())],
+            [''],
+            ['カラム情報'],
+            ['No', '項目名', 'データ型', '主キー', '必須', 'ユニック', '自動インクリメント', 'インデックス', '初期値', '備考'],
         ];
+        $this->titleCellRanges[] = 'A2:A4';
+        $this->dataCellRanges[] = 'B2:B4';
+        $this->titleCellRanges[] = 'A7:J7';
+        $this->alignCenterCellRanges[] = 'A7:J7';
         $indexes = $table->getIndexes();
         $count = 0;
-        foreach ($table->getColumns() as $column) {
+        $rowCount = 7;
+        $beginCell = 'A' . (++$rowCount);
+        $columns = $table->getColumns();
+        foreach ($columns as $column) {
             $data[] = [
                 ++$count,
-                str_beautifier($column->getName()),
                 $column->getName(),
-                $column->getType(),
-                $column->getLength(),
-                $this->isPrimary($indexes, $column->getName()) ? 'YES' : '',
-                $column->getNotNull() ? 'YES' : '',
-                $this->isUnique($indexes, $column->getName()) ? 'YES' : '',
-                $column->getUnsigned() ? 'YES' : '',
-                $column->getAutoincrement() ? 'YES' : '',
-                $this->isSimpleIndex($indexes, $column->getName()) ? 'YES' : '',
+                ($length = $column->getLength()) ? $column->getType() . '(' . $length . ')' : $column->getType(),
+                $this->isPrimary($indexes, $column->getName()) ? 'Y' : '',
+                $column->getNotNull() ? 'Y' : '',
+                $this->isUnique($indexes, $column->getName()) ? 'Y' : '',
+                $column->getAutoincrement() ? 'Y' : '',
+                $this->isSimpleIndex($indexes, $column->getName()) ? 'Y' : '',
                 $column->getDefault(),
-                $column->getComment(),
+                ($comment = $column->getComment()) ? $comment : str_beautifier($column->getName()),
+                // $column->getUnsigned() ? 'YES' : '',
             ];
         }
-        $data[] = ['No', 'Index', 'Type', 'Column'];
+        if (count($columns) === 0) {
+            $data = [''];
+        }
+        $rowCount = count($data);
+        $this->dataCellRanges[] = $beginCell . ':J' . $rowCount;
+        $this->alignCenterCellRanges[] = $beginCell . ':A' . $rowCount;
+        $this->alignCenterCellRanges[] = 'D' . substr($beginCell, 1) . ':I' . $rowCount;
+        $data[] = [''];
+        $data[] = ['インデックス情報'];
+        $data[] = ['No', 'インデックス名', 'カラムリスト'];
+        $rowCount = $rowCount + 3;
+        $this->titleCellRanges[] = 'A' . $rowCount . ':C' . $rowCount;
+        $this->alignCenterCellRanges[] = 'A' . $rowCount . ':C' . $rowCount;
+        $beginCell = 'A' . (++$rowCount);
         foreach ($indexes as $index) {
             $columns = $index->getColumns();
-            $type = $index->isPrimary() ? 'PRIMARY' : ($index->isUnique() ? 'UNIQUE' : 'INDEX');
+            // $type = $index->isPrimary() ? 'PRIMARY' : ($index->isUnique() ? 'UNIQUE' : 'INDEX');
             foreach ($columns as $i => $column) {
                 $data[] = [
                     $i + 1,
                     $index->getName(),
-                    $type,
+                    // $type,
                     $column,
                 ];
             }
         }
-        $data[] = ['No', 'Foreign Key', 'Column', 'Referenced Table', 'Referenced Column'];
+        if (count($indexes) === 0) {
+            $data = [''];
+        }
+        $rowCount = count($data);
+        $this->dataCellRanges[] = $beginCell . ':C' . $rowCount;
+        $this->alignCenterCellRanges[] = $beginCell . ':A' . $rowCount;
+        $data[] = [''];
+        $data[] = ['外部キー情報'];
+        $data[] = ['No', '外部キー名', 'カラム名', '参照先テーブル名', '参照先カラム名'];
+        $rowCount = $rowCount + 3;
+        $this->titleCellRanges[] = 'A' . $rowCount . ':E' . $rowCount;
+        $this->alignCenterCellRanges[] = 'A' . $rowCount . ':E' . $rowCount;
         $count = 0;
-        foreach ($table->getForeignKeys() as $foreignKey) {
+        $beginCell = 'A' . (++$rowCount);
+        $foreignKeys = $table->getForeignKeys();
+        foreach ($foreignKeys as $foreignKey) {
             $columns = $foreignKey->getColumns();
             $foreignColumns = $foreignKey->getForeignColumns();
             foreach ($columns as $i => $column) {
@@ -75,6 +121,12 @@ class TableDetailSheet implements FromCollection, WithTitle
                 ];
             }
         }
+        if (count($foreignKeys) === 0) {
+            $data[] = [''];
+        }
+        $rowCount = count($data);
+        $this->dataCellRanges[] = $beginCell . ':E' . $rowCount;
+        $this->alignCenterCellRanges[] = $beginCell . ':A' . $rowCount;
         return new Collection($data);
     }
 
@@ -111,5 +163,47 @@ class TableDetailSheet implements FromCollection, WithTitle
             }
         }
         return false;
+    }
+
+    public function registerEvents(): array
+    {
+        return [
+            AfterSheet::class => function(AfterSheet $event) {
+                foreach ($this->alignCenterCellRanges as $cellRange) {
+                    $event->sheet->getDelegate()->getStyle($cellRange)->getAlignment()->applyFromArray([
+                        'horizontal' => Alignment::HORIZONTAL_CENTER,
+                    ]);
+                }
+                $event->sheet->getDelegate()->getStyle($this->headingTitleCellRange)->applyFromArray([
+                    'font' => [
+                        'size' => 14,
+                    ],
+                ]);
+                foreach ($this->titleCellRanges as $cellRange) {
+                    $event->sheet->getDelegate()->getStyle($cellRange)->applyFromArray([
+                        'fill' => [
+                            'fillType' => Fill::FILL_SOLID,
+                            'color' => [
+                                'rgb' => '8DB4E2',
+                            ],
+                        ],
+                        'borders' => [
+                            'allBorders' => [
+                                'borderStyle' => Border::BORDER_THIN,
+                            ],
+                        ],
+                    ]);
+                }
+                foreach ($this->dataCellRanges as $cellRange) {
+                    $event->sheet->getDelegate()->getStyle($cellRange)->applyFromArray([
+                        'borders' => [
+                            'allBorders' => [
+                                'borderStyle' => Border::BORDER_THIN,
+                            ],
+                        ],
+                    ]);
+                }
+            },
+        ];
     }
 }

@@ -29,9 +29,16 @@ class ExportDataDocController extends Controller
         Config::set('database.connections.export_connection', [
             'driver' => 'mysql',
             'host' => $request->input('host'),
+            'port' => $request->input('port'),
             'database' => $request->input('database'),
             'username' => $request->input('username'),
             'password' => $request->input('password'),
+            'charset' => 'utf8mb4',
+            'collation' => 'utf8mb4_unicode_ci',
+            'prefix' => '',
+            'prefix_indexes' => true,
+            'strict' => true,
+            'engine' => null,
         ]);
         return $this->excel->download(new DataDocExport(DB::connection('export_connection')), 'テーブル定義書_' . $date . '.xlsx');
     }
