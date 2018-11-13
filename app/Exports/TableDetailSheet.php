@@ -56,7 +56,7 @@ class TableDetailSheet implements FromCollection, WithTitle, WithEvents, ShouldA
             $data[] = [
                 ++$count,
                 $column->getName(),
-                ($length = $column->getLength()) ? $column->getType() . '(' . $length . ')' : $column->getType(),
+                ($length = $column->getLength()) ? $column->getType() . ' (' . $length . ')' : $column->getType(),
                 $this->isPrimary($indexes, $column->getName()) ? 'Y' : '',
                 $column->getNotNull() ? 'Y' : '',
                 $this->isUnique($indexes, $column->getName()) ? 'Y' : '',
